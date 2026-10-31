@@ -84,14 +84,13 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       const cached = getStoredAdminUser();
       if (cached) {
         setCurrentUser(cached);
+        setIsAuthorized(true);
+      } else {
+        clearAdminSession();
+        setIsAuthorized(false);
+        router.replace("/admin/login");
+        return;
       }
-
-      const message =
-        err?.name === "AbortError"
-          ? "Connection timed out while contacting VLEARNN backend server (port 5000)."
-          : err?.message || "Unable to connect to the administration server. Please verify the backend is running.";
-
-      setAuthError(message);
     } finally {
       setIsLoading(false);
     }
@@ -105,12 +104,22 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   useEffect(() => {
     if (!isAuthorized || isLoginPage) return;
 
+    if (typeof window !== "undefined") {
+      const isLocalhost =
+        window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1";
+      if (!isLocalhost && !process.env.NEXT_PUBLIC_API_URL) {
+        return;
+      }
+    }
+
     const token = typeof window !== "undefined" ? localStorage.getItem("vlearnn_admin_token") : null;
     if (!token) return;
 
     const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000/api";
+    let sseAttempts = 0;
 
     const connectSSE = () => {
+      if (sseAttempts >= 2) return;
       try {
         if (eventSourceRef.current) {
           eventSourceRef.current.close();
@@ -121,13 +130,17 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
 
         es.onopen = () => {
           setLiveSyncConnected(true);
+          sseAttempts = 0;
         };
 
         es.onerror = () => {
           setLiveSyncConnected(false);
           es.close();
           eventSourceRef.current = null;
-          reconnectTimeoutRef.current = setTimeout(connectSSE, 6000);
+          sseAttempts++;
+          if (sseAttempts < 2) {
+            reconnectTimeoutRef.current = setTimeout(connectSSE, 6000);
+          }
         };
       } catch {
         setLiveSyncConnected(false);

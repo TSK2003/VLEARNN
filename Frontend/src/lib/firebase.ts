@@ -33,3 +33,4 @@ export const db: Firestore = getFirestore(app);
 export const auth: Auth = getAuth(app);
 export { app, analytics };
 export default app;
+

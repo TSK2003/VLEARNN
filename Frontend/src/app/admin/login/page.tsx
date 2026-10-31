@@ -39,7 +39,7 @@ export default function AdminLoginPage() {
         email: email.trim(),
         password: password.trim(),
       });
-      router.push("/admin");
+      window.location.href = "/admin";
     } catch (err: any) {
       console.error("Login failure:", err);
       setErrorMessage(

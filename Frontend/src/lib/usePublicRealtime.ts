@@ -2,8 +2,6 @@
 
 import { useEffect, useRef } from "react";
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000/api";
-
 export type PublicEventName =
   | "courses_updated"
   | "categories_updated"
@@ -14,7 +12,7 @@ export type PublicEventName =
 
 /**
  * React hook subscribing to the backend public Server-Sent Events (SSE) stream.
- * Automatically handles connection, graceful reconnects with exponential backoff,
+ * Automatically handles connection, graceful reconnects with backoff,
  * event dispatching, and teardown cleanup on component unmount.
  */
 export function usePublicRealtime(
@@ -25,13 +23,24 @@ export function usePublicRealtime(
   handlerRef.current = onEvent;
 
   useEffect(() => {
+    // Avoid connecting to localhost when deployed on Firebase / cloud without a configured backend
+    if (typeof window !== "undefined") {
+      const isLocalhost =
+        window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1";
+      if (!isLocalhost && !process.env.NEXT_PUBLIC_API_URL) {
+        return;
+      }
+    }
+
+    const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000/api";
     let eventSource: EventSource | null = null;
     let reconnectTimeout: NodeJS.Timeout | null = null;
     let isMounted = true;
     let reconnectAttempts = 0;
+    const MAX_RECONNECT_ATTEMPTS = 2;
 
     const connect = () => {
-      if (!isMounted) return;
+      if (!isMounted || reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) return;
 
       try {
         const streamUrl = `${API_BASE}/events/stream`;
@@ -68,17 +77,14 @@ export function usePublicRealtime(
             eventSource.close();
             eventSource = null;
           }
-          if (isMounted) {
-            // Reconnection backoff strategy: 1s, 2s, 4s, capped at 10s
-            const delay = Math.min(1000 * Math.pow(1.5, reconnectAttempts), 10000);
-            reconnectAttempts++;
+          reconnectAttempts++;
+          if (isMounted && reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
+            const delay = Math.min(1000 * Math.pow(2, reconnectAttempts), 5000);
             reconnectTimeout = setTimeout(connect, delay);
           }
         };
-      } catch (err) {
-        if (isMounted) {
-          reconnectTimeout = setTimeout(connect, 3000);
-        }
+      } catch {
+        // SSE unsupported or network unavailable
       }
     };
 
@@ -91,6 +97,5 @@ export function usePublicRealtime(
         eventSource.close();
       }
     };
-  }, []);
+  }, [eventFilter]);
 }
-
